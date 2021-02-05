@@ -93,6 +93,57 @@ async fn friends(root: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn messages(root: &str) -> anyhow::Result<()> {
+    let mut message_file = File::create("messages.md")?;
+    writeln!(message_file, "# Messages\n")?;
+    for index in 1.. {
+        let contacts = Path::new(root).join(format!("message_{}.sqlite", index));
+        if !contacts.exists() {
+            continue;
+        }
+
+        let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
+        let tables: Vec<(String, String)> = sqlx::query_as(
+            "SELECT type, name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+        )
+        .fetch_all(&pool)
+        .await?;
+        println!(
+            "Found {} tables in file message_{}.sqlite",
+            tables.len(),
+            index
+        );
+        for (_ty, table) in tables {
+            if !table.starts_with("Chat_") {
+                continue;
+            }
+            let messages: Vec<(i64, i64, i64, String)> = sqlx::query_as(&format!(
+                "SELECT CreateTime, Type, Des, Message FROM {}",
+                table
+            ))
+            .fetch_all(&pool)
+            .await?;
+            writeln!(message_file, "\n## {}\n", table)?;
+
+            for (create_time, ty, _des, message) in messages {
+                let msg = match ty {
+                    // text message
+                    1 => message,
+                    3 => format!("Image"),
+                    47 => format!("Emoji"),
+                    49 => format!("App Message"),
+                    // recall
+                    10000 => message,
+                    10002 => format!("System Message"),
+                    _ => format!("Unknown message type: {}", ty),
+                };
+                writeln!(message_file, "{} {}\n", create_time, msg)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
     let mut res = HashMap::new();
     let mut offset = 0;
@@ -134,5 +185,6 @@ async fn main() -> anyhow::Result<()> {
         .get_matches();
     let root = matches.value_of("ROOT").unwrap();
     friends(root).await?;
+    messages(root).await?;
     Ok(())
 }
