@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Write};
 
 use clap::{App, Arg};
 use sqlx::{Pool, Sqlite};
-use std::{fs::File, path::Path, prelude::*};
+use std::{fs::File, path::Path};
 
 fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
     let mut res = HashMap::new();
@@ -52,43 +52,81 @@ async fn main() -> anyhow::Result<()> {
     .fetch_all(&pool)
     .await?;
 
-    println!("Saving {} contacts", friends.len());
+    println!("Saving {} friends", friends.len());
     let mut contact_file = File::create("contacts.md")?;
     writeln!(contact_file, "# Contacts\n")?;
+    let mut chatroom_file = File::create("chatrooms.md")?;
+    writeln!(chatroom_file, "# Contacts\n")?;
     for (name, remark, profile, room) in &friends {
-        // ignore chat rooms
         if name.ends_with("@chatroom") {
-            continue;
-        }
+            // chat rooms
+            writeln!(chatroom_file, "\n## {}\n", name)?;
+            let remarks = extract_tlv(remark);
+            if let Some(s) = remarks.get(&10) {
+                writeln!(chatroom_file, "Name: {}", s)?;
+            }
 
-        writeln!(contact_file, "\n## {}\n", name)?;
-        let remarks = extract_tlv(remark);
+            // members
+            if room.len() > 2 {
+                let mut room_len = room[1] as usize;
+                let mut offset = 2;
+                if (room_len & 0x80) != 0 {
+                    room_len = (room_len & 0x7F) + ((room[2] as usize) << 7);
+                    offset = 3;
+                }
+                let xml = String::from_utf8_lossy(&room[offset..offset + room_len]).to_string();
+                if let Ok(doc) = roxmltree::Document::parse(&xml) {
+                    let root = doc.root_element();
+                    writeln!(chatroom_file, "Members:")?;
+                    let mut index = 0;
+                    for member in root.children() {
+                        if let Some(user_name) = member.attribute("UserName") {
+                            write!(chatroom_file, "{}: {}", index, user_name)?;
+                        }
+                        for e in member.children() {
+                            if e.tag_name().name() == "InviterUserName" {
+                                if let Some(inviter) = e.text() {
+                                    write!(chatroom_file, " invited by {}", inviter)?;
+                                }
+                            }
+                        }
+                        writeln!(chatroom_file)?;
 
-        if let Some(s) = remarks.get(&10) {
-            writeln!(contact_file, "Nickname: {}", s)?;
-        }
-        if let Some(s) = remarks.get(&18) {
-            writeln!(contact_file, "WeChat: {}", s)?;
-        }
-        if let Some(s) = remarks.get(&26) {
-            writeln!(contact_file, "Contact Name: {}", s)?;
-        }
-        if let Some(s) = remarks.get(&66) {
-            writeln!(contact_file, "Tags: {}", s)?;
-        }
+                        index += 1;
+                    }
+                }
+            }
+        } else {
+            // contacts
+            writeln!(contact_file, "\n## {}\n", name)?;
+            let remarks = extract_tlv(remark);
 
-        let profiles = extract_tlv(profile);
-        if let Some(s) = profiles.get(&18) {
-            writeln!(contact_file, "Country: {}", s)?;
-        }
-        if let Some(s) = profiles.get(&26) {
-            writeln!(contact_file, "State: {}", s)?;
-        }
-        if let Some(s) = profiles.get(&34) {
-            writeln!(contact_file, "City: {}", s)?;
-        }
-        if let Some(s) = profiles.get(&42) {
-            writeln!(contact_file, "Signature: {}", s)?;
+            if let Some(s) = remarks.get(&10) {
+                writeln!(contact_file, "Nickname: {}", s)?;
+            }
+            if let Some(s) = remarks.get(&18) {
+                writeln!(contact_file, "WeChat: {}", s)?;
+            }
+            if let Some(s) = remarks.get(&26) {
+                writeln!(contact_file, "Contact Name: {}", s)?;
+            }
+            if let Some(s) = remarks.get(&66) {
+                writeln!(contact_file, "Tags: {}", s)?;
+            }
+
+            let profiles = extract_tlv(profile);
+            if let Some(s) = profiles.get(&18) {
+                writeln!(contact_file, "Country: {}", s)?;
+            }
+            if let Some(s) = profiles.get(&26) {
+                writeln!(contact_file, "State: {}", s)?;
+            }
+            if let Some(s) = profiles.get(&34) {
+                writeln!(contact_file, "City: {}", s)?;
+            }
+            if let Some(s) = profiles.get(&42) {
+                writeln!(contact_file, "Signature: {}", s)?;
+            }
         }
     }
     Ok(())
