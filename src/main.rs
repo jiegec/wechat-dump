@@ -4,46 +4,7 @@ use clap::{App, Arg};
 use sqlx::{Pool, Sqlite};
 use std::{fs::File, path::Path};
 
-fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
-    let mut res = HashMap::new();
-    let mut offset = 0;
-    while offset + 1 < data.len() {
-        let tag = data[offset];
-
-        // gender
-        if tag == 0x08 && data[offset + 1] == 1 {
-            res.insert(tag, String::from("Male"));
-            offset += 2;
-            continue;
-        } else if tag == 0x08 && data[offset + 1] == 2 {
-            res.insert(tag, String::from("Female"));
-            offset += 2;
-            continue;
-        }
-
-        let length = data[offset + 1];
-        if offset + 2 + length as usize > data.len() {
-            // unknown problem
-            break;
-        }
-        let value =
-            String::from_utf8_lossy(&data[offset + 2..offset + 2 + length as usize]).to_string();
-        offset += 2 + length as usize;
-        res.insert(tag, value);
-    }
-    res
-}
-
-#[async_std::main]
-async fn main() -> anyhow::Result<()> {
-    let matches = App::new("wechat-dump")
-        .arg(
-            Arg::with_name("ROOT")
-                .required(true)
-                .help("The root directory of Wechat files"),
-        )
-        .get_matches();
-    let root = matches.value_of("ROOT").unwrap();
+async fn friends(root: &str) -> anyhow::Result<()> {
     let contacts = Path::new(root).join("WCDB_Contact.sqlite");
     let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
     let friends: Vec<(String, Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
@@ -129,5 +90,49 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
+    let mut res = HashMap::new();
+    let mut offset = 0;
+    while offset + 1 < data.len() {
+        let tag = data[offset];
+
+        // gender
+        if tag == 0x08 && data[offset + 1] == 1 {
+            res.insert(tag, String::from("Male"));
+            offset += 2;
+            continue;
+        } else if tag == 0x08 && data[offset + 1] == 2 {
+            res.insert(tag, String::from("Female"));
+            offset += 2;
+            continue;
+        }
+
+        let length = data[offset + 1];
+        if offset + 2 + length as usize > data.len() {
+            // unknown problem
+            break;
+        }
+        let value =
+            String::from_utf8_lossy(&data[offset + 2..offset + 2 + length as usize]).to_string();
+        offset += 2 + length as usize;
+        res.insert(tag, value);
+    }
+    res
+}
+
+#[async_std::main]
+async fn main() -> anyhow::Result<()> {
+    let matches = App::new("wechat-dump")
+        .arg(
+            Arg::with_name("ROOT")
+                .required(true)
+                .help("The root directory of Wechat files"),
+        )
+        .get_matches();
+    let root = matches.value_of("ROOT").unwrap();
+    friends(root).await?;
     Ok(())
 }
