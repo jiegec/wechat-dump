@@ -1,5 +1,6 @@
 use std::{collections::HashMap, io::Write};
 
+use chrono::NaiveDateTime;
 use clap::{App, Arg};
 use sqlx::{Pool, Sqlite};
 use std::{fs::File, path::Path};
@@ -118,7 +119,7 @@ async fn messages(root: &str) -> anyhow::Result<()> {
                 continue;
             }
             let messages: Vec<(i64, i64, i64, String)> = sqlx::query_as(&format!(
-                "SELECT CreateTime, Type, Des, Message FROM {}",
+                "SELECT CreateTime, Type, Des, Message FROM {} ORDER BY CreateTime",
                 table
             ))
             .fetch_all(&pool)
@@ -137,7 +138,8 @@ async fn messages(root: &str) -> anyhow::Result<()> {
                     10002 => format!("System Message"),
                     _ => format!("Unknown message type: {}", ty),
                 };
-                writeln!(message_file, "{} {}\n", create_time, msg)?;
+                let time = NaiveDateTime::from_timestamp(create_time, 0);
+                writeln!(message_file, "{:?} {}\n", time, msg)?;
             }
         }
     }
