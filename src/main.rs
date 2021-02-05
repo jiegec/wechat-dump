@@ -100,7 +100,7 @@ async fn messages(root: &str) -> anyhow::Result<()> {
     for index in 1.. {
         let contacts = Path::new(root).join(format!("message_{}.sqlite", index));
         if !contacts.exists() {
-            continue;
+            break;
         }
 
         let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
