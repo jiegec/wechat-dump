@@ -7,9 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sqlx = { version = "0.5.1", features = [ "sqlite", "runtime-async-std-native-tls" ] }
-async-std = { version = "1.9.0", features = [ "attributes" ] }
-anyhow = "1.0.38"
-clap = "2.33.3"
-roxmltree = "0.14.0"
+sqlx = { version = "0.5.13", features = [ "sqlite", "runtime-async-std-native-tls" ] }
+async-std = { version = "1.11.0", features = [ "attributes" ] }
+anyhow = "1.0.57"
+clap = "3.1.18"
+roxmltree = "0.14.1"
 chrono = "0.4.19"

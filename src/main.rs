@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Write};
 
 use chrono::NaiveDateTime;
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use sqlx::{Pool, Sqlite};
 use std::{fs::File, path::Path};
 
@@ -178,9 +178,9 @@ fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
 
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
-    let matches = App::new("wechat-dump")
+    let matches = Command::new("wechat-dump")
         .arg(
-            Arg::with_name("ROOT")
+            Arg::new("ROOT")
                 .required(true)
                 .help("The root directory of Wechat files"),
         )
