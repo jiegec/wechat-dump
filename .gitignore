@@ -2,3 +2,4 @@
 
 *.md
 .vscode/
+!NOTES.md
