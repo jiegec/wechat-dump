@@ -2,6 +2,7 @@ use std::{collections::HashMap, io::Write};
 
 use chrono::NaiveDateTime;
 use clap::{Arg, Command};
+use indicatif::ProgressBar;
 use sqlx::{Pool, Sqlite};
 use std::{fs::File, path::Path};
 
@@ -114,7 +115,11 @@ async fn messages(root: &str) -> anyhow::Result<()> {
             tables.len(),
             index
         );
+
+        let pb = ProgressBar::new(tables.len() as u64);
         for (_ty, table) in tables {
+            pb.inc(1);
+
             if !table.starts_with("Chat_") {
                 continue;
             }
