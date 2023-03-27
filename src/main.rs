@@ -98,6 +98,7 @@ async fn friends(root: &str) -> anyhow::Result<()> {
 async fn messages(root: &str) -> anyhow::Result<()> {
     let mut message_file = File::create("messages.md")?;
     writeln!(message_file, "# Messages\n")?;
+    let mut my_message_file = File::create("my_messages.md")?;
     for index in 1.. {
         let contacts = Path::new(root).join(format!("message_{}.sqlite", index));
         if !contacts.exists() {
@@ -131,8 +132,8 @@ async fn messages(root: &str) -> anyhow::Result<()> {
             .await?;
             writeln!(message_file, "\n## {}\n", table)?;
 
-            for (create_time, ty, _des, message) in messages {
-                let msg = match ty {
+            for (create_time, ty, des, message) in messages {
+                let mut msg = match ty {
                     // text message
                     1 => message,
                     3 => format!("Image"),
@@ -145,6 +146,9 @@ async fn messages(root: &str) -> anyhow::Result<()> {
                 };
                 let time = NaiveDateTime::from_timestamp(create_time, 0);
                 writeln!(message_file, "{:?} {}\n", time, msg)?;
+                if ty == 1 && des == 0 {
+                    writeln!(my_message_file, "{}", msg)?;
+                }
             }
         }
     }
