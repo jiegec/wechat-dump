@@ -36,14 +36,8 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
             }
 
             // members
-            if room.len() > 2 {
-                let mut room_len = room[1] as usize;
-                let mut offset = 2;
-                if (room_len & 0x80) != 0 {
-                    room_len = (room_len & 0x7F) + ((room[2] as usize) << 7);
-                    offset = 3;
-                }
-                let xml = String::from_utf8_lossy(&room[offset..offset + room_len]).to_string();
+            let room = extract_protobuf(room);
+            if let Some(xml) = room.get(&6) {
                 if let Ok(doc) = roxmltree::Document::parse(&xml) {
                     let root = doc.root_element();
                     writeln!(chatroom_file, "Members:")?;
@@ -56,6 +50,11 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
                             if e.tag_name().name() == "InviterUserName" {
                                 if let Some(inviter) = e.text() {
                                     write!(chatroom_file, " invited by {}", inviter)?;
+                                }
+                            }
+                            if e.tag_name().name() == "DisplayName" {
+                                if let Some(display_name) = e.text() {
+                                    write!(chatroom_file, " ({})", display_name)?;
                                 }
                             }
                         }
@@ -201,6 +200,50 @@ fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
             String::from_utf8_lossy(&data[offset + 2..offset + 2 + length as usize]).to_string();
         offset += 2 + length as usize;
         res.insert(tag, value);
+    }
+    res
+}
+
+// https://protobuf.dev/programming-guides/encoding/
+fn extract_protobuf(data: &[u8]) -> HashMap<u8, String> {
+    let mut res = HashMap::new();
+    let mut offset = 0;
+    while offset < data.len() {
+        let tag = data[offset];
+        let ty = tag & 0b111;
+        let field = tag >> 3;
+        if ty == 0 || ty == 2 {
+            // VARINT || LEN
+            if offset + 1 > data.len() {
+                break;
+            }
+
+            // convert varint
+            let mut num = 0usize;
+            let mut shift = 0;
+            while offset < data.len() {
+                offset += 1;
+                num += ((data[offset] & 0x7F) as usize) << shift;
+                if data[offset] & 0x80 == 0 {
+                    break;
+                }
+                shift += 7;
+            }
+            offset += 1;
+
+            if ty == 2 {
+                if offset + num > data.len() {
+                    break;
+                }
+                let value =
+                    String::from_utf8_lossy(&data[offset..offset + num as usize]).to_string();
+                offset += num;
+                res.insert(field, value);
+            }
+        } else {
+            println!("Unrecognized ty: {}", ty);
+            break;
+        }
     }
     res
 }
