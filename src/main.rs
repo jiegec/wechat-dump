@@ -85,6 +85,19 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
             }
 
             if let Ok(profile) = Profile::decode(profile.as_slice()) {
+                if profile.gender != 0 {
+                    writeln!(
+                        contact_file,
+                        "Gender: {}",
+                        if profile.gender == 1 {
+                            "Male"
+                        } else if profile.gender == 2 {
+                            "Female"
+                        } else {
+                            "Others"
+                        }
+                    )?;
+                }
                 if !profile.country.is_empty() {
                     writeln!(contact_file, "Country: {}", profile.country)?;
                 }
