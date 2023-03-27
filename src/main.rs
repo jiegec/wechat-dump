@@ -1,12 +1,13 @@
-use std::{collections::HashMap, io::Write};
-
 use chrono::NaiveDateTime;
 use clap::{Arg, Command};
 use indicatif::ProgressBar;
 use sqlx::{Pool, Sqlite};
+use std::{collections::HashMap, io::Write};
 use std::{fs::File, path::Path};
 
-async fn friends(root: &str) -> anyhow::Result<()> {
+async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
+    // map user name hash to user name
+    let mut name_map = HashMap::new();
     let contacts = Path::new(root).join("WCDB_Contact.sqlite");
     println!("Opening {}", contacts.display());
     let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
@@ -22,6 +23,10 @@ async fn friends(root: &str) -> anyhow::Result<()> {
     let mut chatroom_file = File::create("chatrooms.md")?;
     writeln!(chatroom_file, "# Contacts\n")?;
     for (name, remark, profile, room) in &friends {
+        // MD5(name) => name
+        let digest = md5::compute(name.as_bytes());
+        name_map.insert(format!("{:x}", digest), name.clone());
+
         if name.ends_with("@chatroom") {
             // chat rooms
             writeln!(chatroom_file, "\n## {}\n", name)?;
@@ -94,10 +99,10 @@ async fn friends(root: &str) -> anyhow::Result<()> {
             }
         }
     }
-    Ok(())
+    Ok(name_map)
 }
 
-async fn messages(root: &str) -> anyhow::Result<()> {
+async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Result<()> {
     let mut message_file = File::create("messages.md")?;
     writeln!(message_file, "# Messages\n")?;
     let mut my_message_file = File::create("my_messages.md")?;
@@ -133,7 +138,11 @@ async fn messages(root: &str) -> anyhow::Result<()> {
             ))
             .fetch_all(&pool)
             .await?;
-            writeln!(message_file, "\n## {}\n", table)?;
+            let title = table
+                .strip_prefix("Chat_")
+                .and_then(|name| name_map.get(name))
+                .unwrap_or(&table);
+            writeln!(message_file, "\n## {}\n", title)?;
 
             for (create_time, ty, des, message) in messages {
                 // https://github.com/BlueMatthew/WechatExporter/blob/f9685ba6cc1932bb6f08c465cd2c4eda769538e0/WechatExporter/core/MessageParser.cpp#L58
@@ -206,10 +215,14 @@ async fn main() -> anyhow::Result<()> {
         )
         .get_matches();
     let root = matches.value_of("ROOT").unwrap();
-    if let Err(err) = friends(root).await {
-        eprintln!("Failed to dump friends: {}", err);
-    }
-    if let Err(err) = messages(root).await {
+    let name_map = match friends(root).await {
+        Ok(name_map) => name_map,
+        Err(err) => {
+            eprintln!("Failed to dump friends: {}", err);
+            HashMap::new()
+        }
+    };
+    if let Err(err) = messages(root, &name_map).await {
         eprintln!("Failed to dump messages: {}", err);
     }
     Ok(())
