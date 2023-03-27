@@ -8,6 +8,7 @@ use std::{fs::File, path::Path};
 
 async fn friends(root: &str) -> anyhow::Result<()> {
     let contacts = Path::new(root).join("WCDB_Contact.sqlite");
+    println!("Opening {}", contacts.display());
     let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
     let friends: Vec<(String, Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
         "SELECT userName, dbContactRemark, dbContactProfile, dbContactChatRoom FROM Friend ORDER BY userName",
@@ -63,32 +64,33 @@ async fn friends(root: &str) -> anyhow::Result<()> {
             // contacts
             writeln!(contact_file, "\n## {}\n", name)?;
             let remarks = extract_tlv(remark);
-
-            if let Some(s) = remarks.get(&10) {
-                writeln!(contact_file, "Nickname: {}", s)?;
-            }
-            if let Some(s) = remarks.get(&18) {
-                writeln!(contact_file, "WeChat: {}", s)?;
-            }
-            if let Some(s) = remarks.get(&26) {
-                writeln!(contact_file, "Contact Name: {}", s)?;
-            }
-            if let Some(s) = remarks.get(&66) {
-                writeln!(contact_file, "Tags: {}", s)?;
+            let mapping = [
+                (10, "Nickname"),
+                (18, "WeChat"),
+                (26, "Contact Name"),
+                (66, "Tags"),
+            ];
+            for (k, v) in mapping {
+                if let Some(s) = remarks.get(&k) {
+                    if !s.is_empty() {
+                        writeln!(contact_file, "{}: {}", v, s)?;
+                    }
+                }
             }
 
             let profiles = extract_tlv(profile);
-            if let Some(s) = profiles.get(&18) {
-                writeln!(contact_file, "Country: {}", s)?;
-            }
-            if let Some(s) = profiles.get(&26) {
-                writeln!(contact_file, "State: {}", s)?;
-            }
-            if let Some(s) = profiles.get(&34) {
-                writeln!(contact_file, "City: {}", s)?;
-            }
-            if let Some(s) = profiles.get(&42) {
-                writeln!(contact_file, "Signature: {}", s)?;
+            let mapping = [
+                (18, "Country"),
+                (26, "State"),
+                (34, "City"),
+                (42, "Signature"),
+            ];
+            for (k, v) in mapping {
+                if let Some(s) = profiles.get(&k) {
+                    if !s.is_empty() {
+                        writeln!(contact_file, "{}: {}", v, s)?;
+                    }
+                }
             }
         }
     }
@@ -104,6 +106,7 @@ async fn messages(root: &str) -> anyhow::Result<()> {
         if !contacts.exists() {
             break;
         }
+        println!("Opening {}", contacts.display());
 
         let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
         let tables: Vec<(String, String)> = sqlx::query_as(
@@ -133,12 +136,19 @@ async fn messages(root: &str) -> anyhow::Result<()> {
             writeln!(message_file, "\n## {}\n", table)?;
 
             for (create_time, ty, des, message) in messages {
-                let mut msg = match ty {
+                // https://github.com/BlueMatthew/WechatExporter/blob/f9685ba6cc1932bb6f08c465cd2c4eda769538e0/WechatExporter/core/MessageParser.cpp#L58
+                // https://github.com/ppwwyyxx/wechat-dump/blob/master/wechat/msg.py
+                let msg = match ty {
                     // text message
                     1 => message,
                     3 => format!("Image"),
+                    34 => format!("Voice"),
+                    42 => format!("Share User"),
+                    43 => format!("Video"),
                     47 => format!("Emoji"),
+                    48 => format!("Location"),
                     49 => format!("App Message"),
+                    50 => format!("Voice Call"),
                     // recall
                     10000 => message,
                     10002 => format!("System Message"),
@@ -155,6 +165,7 @@ async fn messages(root: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// https://github.com/stomakun/WechatExport-iOS/blob/master/WechatExport/wechat.cs#L578
 fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
     let mut res = HashMap::new();
     let mut offset = 0;
@@ -195,7 +206,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .get_matches();
     let root = matches.value_of("ROOT").unwrap();
-    friends(root).await?;
-    messages(root).await?;
+    if let Err(err) = friends(root).await {
+        eprintln!("Failed to dump friends: {}", err);
+    }
+    if let Err(err) = messages(root).await {
+        eprintln!("Failed to dump messages: {}", err);
+    }
     Ok(())
 }
