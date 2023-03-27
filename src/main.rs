@@ -177,7 +177,7 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
                     10002 => format!("System Message"),
                     _ => format!("Unknown message type: {}", ty),
                 };
-                let time = NaiveDateTime::from_timestamp(create_time, 0);
+                let time = NaiveDateTime::from_timestamp_opt(create_time, 0).unwrap();
                 writeln!(message_file, "{:?} {}\n", time, msg)?;
                 if ty == 1 && des == 0 {
                     writeln!(my_message_file, "{}", msg)?;
