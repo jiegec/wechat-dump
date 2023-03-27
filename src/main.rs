@@ -1,9 +1,12 @@
 use chrono::NaiveDateTime;
 use clap::{Arg, Command};
 use indicatif::ProgressBar;
+use prost::Message;
 use sqlx::{Pool, Sqlite};
 use std::{collections::HashMap, io::Write};
 use std::{fs::File, path::Path};
+
+include!(concat!(env!("OUT_DIR"), "/wechat.dump.rs"));
 
 async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
     // map user name hash to user name
@@ -30,14 +33,13 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
         if name.ends_with("@chatroom") {
             // chat rooms
             writeln!(chatroom_file, "\n## {}\n", name)?;
-            let remarks = extract_tlv(remark);
-            if let Some(s) = remarks.get(&10) {
-                writeln!(chatroom_file, "Name: {}", s)?;
+            if let Ok(remark) = Remark::decode(remark.as_slice()) {
+                writeln!(chatroom_file, "Name: {}", remark.nickname)?;
             }
 
             // members
-            let room = extract_protobuf(room);
-            if let Some(xml) = room.get(&6) {
+            if let Ok(chatroom) = Chatroom::decode(room.as_slice()) {
+                let xml = chatroom.room_info_xml;
                 if let Ok(doc) = roxmltree::Document::parse(&xml) {
                     let root = doc.root_element();
                     writeln!(chatroom_file, "Members:")?;
@@ -67,33 +69,33 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
         } else {
             // contacts
             writeln!(contact_file, "\n## {}\n", name)?;
-            let remarks = extract_tlv(remark);
-            let mapping = [
-                (10, "Nickname"),
-                (18, "WeChat"),
-                (26, "Contact Name"),
-                (66, "Tags"),
-            ];
-            for (k, v) in mapping {
-                if let Some(s) = remarks.get(&k) {
-                    if !s.is_empty() {
-                        writeln!(contact_file, "{}: {}", v, s)?;
-                    }
+            if let Ok(remark) = Remark::decode(remark.as_slice()) {
+                if !remark.nickname.is_empty() {
+                    writeln!(contact_file, "Nickname: {}", remark.nickname)?;
+                }
+                if !remark.wechat.is_empty() {
+                    writeln!(contact_file, "WeChat ID: {}", remark.wechat)?;
+                }
+                if !remark.alias.is_empty() {
+                    writeln!(contact_file, "Alias: {}", remark.alias)?;
+                }
+                if !remark.tags.is_empty() {
+                    writeln!(contact_file, "Tags: {}", remark.tags)?;
                 }
             }
 
-            let profiles = extract_tlv(profile);
-            let mapping = [
-                (18, "Country"),
-                (26, "State"),
-                (34, "City"),
-                (42, "Signature"),
-            ];
-            for (k, v) in mapping {
-                if let Some(s) = profiles.get(&k) {
-                    if !s.is_empty() {
-                        writeln!(contact_file, "{}: {}", v, s)?;
-                    }
+            if let Ok(profile) = Profile::decode(profile.as_slice()) {
+                if !profile.country.is_empty() {
+                    writeln!(contact_file, "Country: {}", profile.country)?;
+                }
+                if !profile.state.is_empty() {
+                    writeln!(contact_file, "State: {}", profile.state)?;
+                }
+                if !profile.city.is_empty() {
+                    writeln!(contact_file, "City: {}", profile.city)?;
+                }
+                if !profile.signature.is_empty() {
+                    writeln!(contact_file, "Signature: {}", profile.signature)?;
                 }
             }
         }
@@ -171,81 +173,6 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
         }
     }
     Ok(())
-}
-
-// https://github.com/stomakun/WechatExport-iOS/blob/master/WechatExport/wechat.cs#L578
-fn extract_tlv(data: &[u8]) -> HashMap<u8, String> {
-    let mut res = HashMap::new();
-    let mut offset = 0;
-    while offset + 1 < data.len() {
-        let tag = data[offset];
-
-        // gender
-        if tag == 0x08 && data[offset + 1] == 1 {
-            res.insert(tag, String::from("Male"));
-            offset += 2;
-            continue;
-        } else if tag == 0x08 && data[offset + 1] == 2 {
-            res.insert(tag, String::from("Female"));
-            offset += 2;
-            continue;
-        }
-
-        let length = data[offset + 1];
-        if offset + 2 + length as usize > data.len() {
-            // unknown problem
-            break;
-        }
-        let value =
-            String::from_utf8_lossy(&data[offset + 2..offset + 2 + length as usize]).to_string();
-        offset += 2 + length as usize;
-        res.insert(tag, value);
-    }
-    res
-}
-
-// https://protobuf.dev/programming-guides/encoding/
-fn extract_protobuf(data: &[u8]) -> HashMap<u8, String> {
-    let mut res = HashMap::new();
-    let mut offset = 0;
-    while offset < data.len() {
-        let tag = data[offset];
-        let ty = tag & 0b111;
-        let field = tag >> 3;
-        if ty == 0 || ty == 2 {
-            // VARINT || LEN
-            if offset + 1 > data.len() {
-                break;
-            }
-
-            // convert varint
-            let mut num = 0usize;
-            let mut shift = 0;
-            while offset < data.len() {
-                offset += 1;
-                num += ((data[offset] & 0x7F) as usize) << shift;
-                if data[offset] & 0x80 == 0 {
-                    break;
-                }
-                shift += 7;
-            }
-            offset += 1;
-
-            if ty == 2 {
-                if offset + num > data.len() {
-                    break;
-                }
-                let value =
-                    String::from_utf8_lossy(&data[offset..offset + num as usize]).to_string();
-                offset += num;
-                res.insert(field, value);
-            }
-        } else {
-            println!("Unrecognized ty: {}", ty);
-            break;
-        }
-    }
-    res
 }
 
 #[async_std::main]

@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package wechat.dump;
+
+message Chatroom {
+    string members = 1;
+    string creator = 2;
+    int32 unknown1 = 3;
+    int32 unknown2 = 4;
+    int32 unknown3 = 5;
+    string roomInfoXml = 6;
+}
+
+message Profile {
+    int32 gender = 1;
+    string country = 2;
+    string state = 3;
+    string city = 4;
+    string signature = 5;
+}
+
+message Remark {
+    string nickname = 1;
+    string wechat = 2;
+    string alias = 3;
+    string aliasPinyinFull = 4;
+    string aliasPinyinCapital = 5;
+    string nicknamePinyin = 6;
+    string unknown1 = 7;
+    string tags = 8;
+}
