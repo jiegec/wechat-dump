@@ -20,3 +20,9 @@ Copy them to Mac.
 ```shell
 cargo run -- /path/to/wechat/db
 ```
+
+Learned from the following repos:
+
+- https://github.com/stomakun/WechatExport-iOS
+- https://github.com/BlueMatthew/WechatExporter
+- https://github.com/ppwwyyxx/wechat-dump
