@@ -10,13 +10,13 @@ edition = "2018"
 sqlx = { version = "0.8.1", features = ["sqlite", "runtime-async-std-native-tls"] }
 async-std = { version = "1.12.0", features = ["attributes"] }
 anyhow = "1.0.57"
-clap = "3.1.18"
 roxmltree = "0.14.1"
 chrono = "0.4.24"
 indicatif = "0.17.0"
 md5 = "0.7.0"
 bytes = "1.4.0"
 prost = "0.11.8"
+clap = { version = "4.5.18", features = ["derive"] }
 
 [build-dependencies]
 prost-build = "0.11.8"

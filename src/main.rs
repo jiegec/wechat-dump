@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use clap::{Arg, Command};
+use clap::Parser;
 use indicatif::ProgressBar;
 use prost::Message;
 use sqlx::{Pool, Sqlite};
@@ -188,24 +188,24 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
     Ok(())
 }
 
+#[derive(Parser)]
+#[command(version, about)]
+struct Cli {
+    /// The root directory of Wechat files
+    root: String,
+}
+
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
-    let matches = Command::new("wechat-dump")
-        .arg(
-            Arg::new("ROOT")
-                .required(true)
-                .help("The root directory of Wechat files"),
-        )
-        .get_matches();
-    let root = matches.value_of("ROOT").unwrap();
-    let name_map = match friends(root).await {
+    let cli = Cli::parse();
+    let name_map = match friends(&cli.root).await {
         Ok(name_map) => name_map,
         Err(err) => {
             eprintln!("Failed to dump friends: {}", err);
             HashMap::new()
         }
     };
-    if let Err(err) = messages(root, &name_map).await {
+    if let Err(err) = messages(&cli.root, &name_map).await {
         eprintln!("Failed to dump messages: {}", err);
     }
     Ok(())
