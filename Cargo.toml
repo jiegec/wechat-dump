@@ -15,8 +15,8 @@ chrono = "0.4.24"
 indicatif = "0.17.0"
 md5 = "0.7.0"
 bytes = "1.4.0"
-prost = "0.11.8"
+prost = "0.13.3"
 clap = { version = "4.5.18", features = ["derive"] }
 
 [build-dependencies]
-prost-build = "0.11.8"
+prost-build = "0.13.3"
