@@ -146,7 +146,7 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
             if !table.starts_with("Chat_") {
                 continue;
             }
-            let messages: Vec<(i64, i64, i64, String)> = sqlx::query_as(&format!(
+            let messages: Vec<(i64, i64, i64, Vec<u8>)> = sqlx::query_as(&format!(
                 "SELECT CreateTime, Type, Des, Message FROM {} ORDER BY CreateTime",
                 table
             ))
@@ -158,7 +158,8 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
                 .unwrap_or(&table);
             writeln!(message_file, "\n## {}\n", title)?;
 
-            for (create_time, ty, des, message) in messages {
+            for (create_time, ty, des, message_bytes) in messages {
+                let message = String::from_utf8_lossy(&message_bytes).to_string();
                 // https://github.com/BlueMatthew/WechatExporter/blob/f9685ba6cc1932bb6f08c465cd2c4eda769538e0/WechatExporter/core/MessageParser.cpp#L58
                 // https://github.com/ppwwyyxx/wechat-dump/blob/master/wechat/msg.py
                 let msg = match ty {
