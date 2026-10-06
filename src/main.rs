@@ -1,12 +1,14 @@
-use chrono::NaiveDateTime;
+use chrono::DateTime;
 use clap::Parser;
 use indicatif::ProgressBar;
 use prost::Message;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, QueryBuilder, Sqlite};
 use std::{collections::HashMap, io::Write};
 use std::{fs::File, path::Path};
 
 include!(concat!(env!("OUT_DIR"), "/wechat.dump.rs"));
+
+type Friend = (String, Vec<u8>, Vec<u8>, Vec<u8>);
 
 async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
     // map user name hash to user name
@@ -14,7 +16,7 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
     let contacts = Path::new(root).join("WCDB_Contact.sqlite");
     println!("Opening {}", contacts.display());
     let pool = Pool::<Sqlite>::connect(&format!("sqlite:{}", contacts.display())).await?;
-    let friends: Vec<(String, Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+    let friends: Vec<Friend> = sqlx::query_as(
         "SELECT userName, dbContactRemark, dbContactProfile, dbContactChatRoom FROM Friend ORDER BY userName",
     )
     .fetch_all(&pool)
@@ -43,8 +45,7 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
                 if let Ok(doc) = roxmltree::Document::parse(&xml) {
                     let root = doc.root_element();
                     writeln!(chatroom_file, "Members:")?;
-                    let mut index = 0;
-                    for member in root.children() {
+                    for (index, member) in root.children().enumerate() {
                         if let Some(user_name) = member.attribute("UserName") {
                             write!(chatroom_file, "{}: {}", index, user_name)?;
                         }
@@ -61,8 +62,6 @@ async fn friends(root: &str) -> anyhow::Result<HashMap<String, String>> {
                             }
                         }
                         writeln!(chatroom_file)?;
-
-                        index += 1;
                     }
                 }
             }
@@ -146,12 +145,20 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
             if !table.starts_with("Chat_") {
                 continue;
             }
-            let messages: Vec<(i64, i64, i64, Vec<u8>)> = sqlx::query_as(&format!(
-                "SELECT CreateTime, Type, Des, Message FROM {} ORDER BY CreateTime",
-                table
-            ))
-            .fetch_all(&pool)
-            .await?;
+            // Table names cannot be bound as SQL parameters, so validate the
+            // identifier before interpolating it into the query.
+            if !table
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            {
+                continue;
+            }
+            let mut query =
+                QueryBuilder::<Sqlite>::new("SELECT CreateTime, Type, Des, Message FROM ");
+            query.push(&table);
+            query.push(" ORDER BY CreateTime");
+            let messages: Vec<(i64, i64, i64, Vec<u8>)> =
+                query.build_query_as().fetch_all(&pool).await?;
             let title = table
                 .strip_prefix("Chat_")
                 .and_then(|name| name_map.get(name))
@@ -165,20 +172,20 @@ async fn messages(root: &str, name_map: &HashMap<String, String>) -> anyhow::Res
                 let msg = match ty {
                     // text message
                     1 => message,
-                    3 => format!("Image"),
-                    34 => format!("Voice"),
-                    42 => format!("Share User"),
-                    43 => format!("Video"),
-                    47 => format!("Emoji"),
-                    48 => format!("Location"),
-                    49 => format!("App Message"),
-                    50 => format!("Voice Call"),
+                    3 => "Image".to_string(),
+                    34 => "Voice".to_string(),
+                    42 => "Share User".to_string(),
+                    43 => "Video".to_string(),
+                    47 => "Emoji".to_string(),
+                    48 => "Location".to_string(),
+                    49 => "App Message".to_string(),
+                    50 => "Voice Call".to_string(),
                     // recall
                     10000 => message,
-                    10002 => format!("System Message"),
+                    10002 => "System Message".to_string(),
                     _ => format!("Unknown message type: {}", ty),
                 };
-                let time = NaiveDateTime::from_timestamp_opt(create_time, 0).unwrap();
+                let time = DateTime::from_timestamp(create_time, 0).unwrap();
                 writeln!(message_file, "{:?} {}\n", time, msg)?;
                 if ty == 1 && des == 0 {
                     writeln!(my_message_file, "{}", msg)?;
